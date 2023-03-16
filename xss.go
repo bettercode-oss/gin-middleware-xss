@@ -25,12 +25,12 @@ type Config struct {
 	UrlsToExclude     []string
 }
 
-type httpLogger struct {
+type xssLogger struct {
 	log *log.Logger
 }
 
-func newLogger() *httpLogger {
-	return &httpLogger{
+func newLogger() *xssLogger {
+	return &xssLogger{
 		log: log.New(os.Stderr, "bettercode-oss/gin-middleware-xss - ", log.LstdFlags),
 	}
 }
