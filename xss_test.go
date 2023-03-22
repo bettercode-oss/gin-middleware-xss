@@ -101,7 +101,7 @@ func TestXssSanitizer_requestBody_읽기_실패시_살균_안하고_다음_코�
 	router.POST("/", mirrorEntityBody)
 	requestBody := `{
 		"id": 2,
-    "data": "hello <script>alert('xss attack');</script>"
+    	"data": "hello <script>alert('xss attack');</script>"
 	}`
 
 	// when
@@ -186,7 +186,7 @@ func TestXssSanitizer_json_특정_필드_살균_안함(t *testing.T) {
 	assert.Equal(t, expected, actual)
 }
 
-func TestXssSanitizer_http_method_Patch_살균_안함(t *testing.T) {
+func TestXssSanitizer_http_method_Patch_살균안함(t *testing.T) {
 	// given
 	router := gin.Default()
 	cfg := Config{TargetHttpMethods: []string{http.MethodPost, http.MethodPut}}
@@ -251,6 +251,42 @@ func TestXssSanitizer_중첩되는_JSON(t *testing.T) {
 
 }
 
+func TestXssSanitizer_boolean_포함한_중첩된_JSON(t *testing.T) {
+	// given
+	router := gin.Default()
+	cfg := Config{TargetHttpMethods: []string{http.MethodPost, http.MethodPut}}
+	router.Use(Sanitizer(cfg))
+
+	router.POST("/", mirrorEntityBody)
+	requestBody := `{
+		"name":"MD",
+		"active":true,
+		"site":{
+			"closed":false
+		}
+	}`
+
+	// when
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(requestBody))
+	req.Header.Set(ContentType, ContentTypeApplicationJson)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	// then
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var actual any
+	json.Unmarshal(rec.Body.Bytes(), &actual)
+	expected := map[string]any{
+		"name":   "MD",
+		"active": true,
+		"site": map[string]any{
+			"closed": false,
+		},
+	}
+	assert.Equal(t, expected, actual)
+
+}
+
 func Test_jsonMapToBytes_실패(t *testing.T) {
 	jsonMap := map[string]any{
 		"data": make(chan int),
@@ -262,7 +298,7 @@ func Test_jsonMapToBytes_실패(t *testing.T) {
 func Test_bytesToJsonMap_실패(t *testing.T) {
 	jsonMap := `{
 		"id": 1
-    "data": "hello"
+    	"data": "hello"
 	}`
 	_, err := bytesToJsonMap([]byte(jsonMap))
 	assert.NotNil(t, err)
