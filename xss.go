@@ -63,6 +63,8 @@ func sanitizeJsonMap(jsonMap map[string]any, p *bluemonday.Policy) map[string]an
 			case string:
 				str := fmt.Sprintf("%v", val)
 				sanitizedJsonMap[key] = strings.TrimSpace(p.Sanitize(str))
+			case bool:
+				sanitizedJsonMap[key] = val
 			case float64:
 				str := strconv.FormatFloat(val.(float64), 'g', 0, 64)
 				numStr, err := strconv.ParseFloat(strings.TrimSpace(p.Sanitize(str)), 64)
