@@ -14,7 +14,7 @@ import (
 )
 
 func mirrorEntityBody(ctx *gin.Context) {
-	var body map[string]any
+	var body any
 	if err := ctx.BindJSON(&body); err != nil {
 		ctx.JSON(http.StatusBadRequest, err.Error())
 	}
@@ -218,8 +218,7 @@ func TestXssSanitizer_http_method_Patch_살균안함(t *testing.T) {
 	assert.Equal(t, expected, actual)
 }
 
-func TestXssSanitizer_중첩되는_JSON(t *testing.T) {
-	t.Skip("나중에 처리한다.")
+func TestXssSanitizer_float64배열_포함한_중첩되는_JSON(t *testing.T) {
 	// given
 	router := gin.Default()
 	cfg := Config{TargetHttpMethods: []string{http.MethodPost, http.MethodPut}}
@@ -227,9 +226,9 @@ func TestXssSanitizer_중첩되는_JSON(t *testing.T) {
 
 	router.POST("/", mirrorEntityBody)
 	requestBody := `{
-		"name": "MD",
-		"description": "MD 역할",
-    "allowedPermissionIds": [2, 3]
+		"name":"MD",
+		"description":"MD 역할",
+    	"allowedPermissionIds":[2, 3]
 	}`
 
 	// when
@@ -245,7 +244,7 @@ func TestXssSanitizer_중첩되는_JSON(t *testing.T) {
 	expected := map[string]any{
 		"name":                 "MD",
 		"description":          "MD 역할",
-		"allowedPermissionIds": []float64{2, 3},
+		"allowedPermissionIds": []any{float64(2), float64(3)},
 	}
 	assert.Equal(t, expected, actual)
 
@@ -287,19 +286,134 @@ func TestXssSanitizer_boolean_포함한_중첩된_JSON(t *testing.T) {
 
 }
 
-func Test_jsonMapToBytes_실패(t *testing.T) {
-	jsonMap := map[string]any{
+func Test_jsonToBytes_실패(t *testing.T) {
+	json := map[string]any{
 		"data": make(chan int),
 	}
-	_, err := jsonMapToBytes(jsonMap)
+	_, err := jsonToBytes(json)
 	assert.NotNil(t, err)
 }
 
-func Test_bytesToJsonMap_실패(t *testing.T) {
-	jsonMap := `{
+func Test_bytesToJson_실패(t *testing.T) {
+	json := `{
 		"id": 1
     	"data": "hello"
 	}`
-	_, err := bytesToJsonMap([]byte(jsonMap))
+	_, err := bytesToJson([]byte(json))
 	assert.NotNil(t, err)
+}
+
+func TestXssSanitizer_문자열배열_포함한_중첩되는_JSON(t *testing.T) {
+	// given
+	router := gin.Default()
+	cfg := Config{TargetHttpMethods: []string{http.MethodPost, http.MethodPut}}
+	router.Use(Sanitizer(cfg))
+
+	router.POST("/", mirrorEntityBody)
+	requestBody := `{
+	  "items": [
+		{ "type": "</script><script>alert('XSS')</script>" },
+		{ "enum": ["</script><script>alert('XSS')</script>", "a", "b", "c"] }
+	  ]
+	}`
+
+	// when
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(requestBody))
+	req.Header.Set(ContentType, ContentTypeApplicationJson)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	// then
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var actual any
+	json.Unmarshal(rec.Body.Bytes(), &actual)
+	expected := map[string]any{
+		"items": []any{
+			map[string]any{
+				"type": "",
+			},
+			map[string]any{
+				"enum": []any{
+					"", "a", "b", "c",
+				},
+			},
+		},
+	}
+	assert.Equal(t, expected, actual)
+
+}
+
+func TestXssSanitizer_객체배열_포함한_중첩되는_JSON(t *testing.T) {
+	// given
+	router := gin.Default()
+	cfg := Config{TargetHttpMethods: []string{http.MethodPost, http.MethodPut}}
+	router.Use(Sanitizer(cfg))
+
+	router.POST("/", mirrorEntityBody)
+	requestBody := `{
+	  "items": [
+		{ "key": 1 , "value":"</script><script>alert('XSS')</script>"},
+		{ "key": 2 , "value":["a",1,false,{ "xss":"</script><script>alert('XSS')</script>"}]}
+	  ]
+	}`
+
+	// when
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(requestBody))
+	req.Header.Set(ContentType, ContentTypeApplicationJson)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	// then
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var actual any
+	json.Unmarshal(rec.Body.Bytes(), &actual)
+	expected := map[string]any{
+		"items": []any{
+			map[string]any{
+				"key":   float64(1),
+				"value": "",
+			},
+			map[string]any{
+				"key": float64(2),
+				"value": []any{
+					"a", float64(1), false, map[string]any{"xss": ""},
+				},
+			},
+		},
+	}
+	assert.Equal(t, expected, actual)
+
+}
+
+func TestXssSanitizer_HTTP_body_배열인_경우(t *testing.T) {
+	// given
+	router := gin.Default()
+	cfg := Config{TargetHttpMethods: []string{http.MethodPost, http.MethodPut}}
+	router.Use(Sanitizer(cfg))
+
+	router.POST("/", mirrorEntityBody)
+	requestBody := `[{"name": "coco", "age": 12}, {"name": "</script><script>alert('XSS')</script>", "age": 25}]`
+
+	// when
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(requestBody))
+	req.Header.Set(ContentType, ContentTypeApplicationJson)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	// then
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var actual []any
+	json.Unmarshal(rec.Body.Bytes(), &actual)
+	expected := []any{
+		map[string]any{
+			"name": "coco",
+			"age":  float64(12),
+		},
+		map[string]any{
+			"name": "",
+			"age":  float64(25),
+		},
+	}
+	assert.Equal(t, expected, actual)
+
 }
