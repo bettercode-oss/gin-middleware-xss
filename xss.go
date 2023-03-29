@@ -10,7 +10,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"strconv"
+	"reflect"
 	"strings"
 )
 
@@ -39,15 +39,15 @@ var logger = newLogger()
 
 var readFn = ioutil.ReadAll
 
-func bytesToJsonMap(data []byte) (map[string]any, error) {
-	var jsonMap map[string]any
+func bytesToJson(data []byte) (any, error) {
+	var jsonMap any
 	if err := json.Unmarshal(data, &jsonMap); err != nil {
 		return nil, err
 	}
 	return jsonMap, nil
 }
 
-func jsonMapToBytes(j map[string]any) ([]byte, error) {
+func jsonToBytes(j any) ([]byte, error) {
 	bytesData, err := json.Marshal(j)
 	if err != nil {
 		return nil, err
@@ -55,32 +55,35 @@ func jsonMapToBytes(j map[string]any) ([]byte, error) {
 	return bytesData, nil
 }
 
-func sanitizeJsonMap(jsonMap map[string]any, p *bluemonday.Policy) map[string]any {
-	sanitizedJsonMap := make(map[string]any)
-	if jsonMap != nil {
-		for key, val := range jsonMap {
-			switch val.(type) {
-			case string:
-				str := fmt.Sprintf("%v", val)
-				sanitizedJsonMap[key] = strings.TrimSpace(p.Sanitize(str))
-			case bool:
-				sanitizedJsonMap[key] = val
-			case float64:
-				str := strconv.FormatFloat(val.(float64), 'g', 0, 64)
-				numStr, err := strconv.ParseFloat(strings.TrimSpace(p.Sanitize(str)), 64)
-				if err != nil {
-					logger.log.Println(err)
-					break
-				}
-				sanitizedJsonMap[key] = numStr
-			case map[string]any:
-				sanitizedJsonMap[key] = sanitizeJsonMap(val.(map[string]any), p)
-			default:
-				sanitizedJsonMap[key] = strings.TrimSpace(p.Sanitize(fmt.Sprintf("%v", val)))
+func sanitizeField(fieldValue any, p *bluemonday.Policy) any {
+	values := reflect.ValueOf(fieldValue)
+	switch values.Kind() {
+	case reflect.Slice:
+		if values.Len() > 0 {
+			arr := make([]any, values.Len())
+			for i := 0; i < values.Len(); i++ {
+				chgField := sanitizeField(values.Index(i).Interface(), p)
+				arr[i] = chgField
 			}
+			return arr
 		}
+	case reflect.Map:
+		obj := make(map[string]any)
+		for _, key := range values.MapKeys() {
+			chgField := sanitizeField(values.MapIndex(key).Interface(), p)
+			obj[key.String()] = chgField
+		}
+		return obj
+	case reflect.String:
+		return strings.TrimSpace(p.Sanitize(fmt.Sprintf("%v", fieldValue)))
+	case reflect.Bool:
+		return fieldValue
+	case reflect.Float64:
+		return fieldValue
+	default:
+		return strings.TrimSpace(p.Sanitize(fmt.Sprintf("%v", fieldValue)))
 	}
-	return sanitizedJsonMap
+	return nil
 }
 
 func Sanitizer(cfg Config) gin.HandlerFunc {
@@ -95,14 +98,15 @@ func Sanitizer(cfg Config) gin.HandlerFunc {
 				c.Next()
 				return
 			}
-			jsonMap, err := bytesToJsonMap(bodyBytes)
+			json, err := bytesToJson(bodyBytes)
 			if err != nil {
 				logger.log.Println(err)
 				req.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
 				c.Next()
 				return
 			}
-			jsonBytes, err := jsonMapToBytes(sanitizeJsonMap(jsonMap, bluemonday.UGCPolicy()))
+			result := sanitizeField(json, bluemonday.UGCPolicy())
+			jsonBytes, err := jsonToBytes(result)
 			if err != nil {
 				logger.log.Println(err)
 				req.Body = ioutil.NopCloser(bytes.NewBuffer(bodyBytes))
