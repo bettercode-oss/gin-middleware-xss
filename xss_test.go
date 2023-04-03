@@ -340,7 +340,6 @@ func TestXssSanitizer_문자열배열_포함한_중첩되는_JSON(t *testing.T) 
 		},
 	}
 	assert.Equal(t, expected, actual)
-
 }
 
 func TestXssSanitizer_객체배열_포함한_중첩되는_JSON(t *testing.T) {
@@ -385,7 +384,7 @@ func TestXssSanitizer_객체배열_포함한_중첩되는_JSON(t *testing.T) {
 
 }
 
-func TestXssSanitizer_HTTP_body_배열인_경우(t *testing.T) {
+func TestXssSanitizer_Request_Entity_Body_JSON에_빈배열이_있으면_빈값을_그대로_반환한다(t *testing.T) {
 	// given
 	router := gin.Default()
 	cfg := Config{TargetHttpMethods: []string{http.MethodPost, http.MethodPut}}
@@ -413,6 +412,36 @@ func TestXssSanitizer_HTTP_body_배열인_경우(t *testing.T) {
 			"name": "",
 			"age":  float64(25),
 		},
+	}
+	assert.Equal(t, expected, actual)
+
+}
+
+func TestXssSanitizer_JSON에빈배열이존재하는경우(t *testing.T) {
+	// given
+	router := gin.Default()
+	cfg := Config{TargetHttpMethods: []string{http.MethodPost, http.MethodPut}}
+	router.Use(Sanitizer(cfg))
+
+	router.POST("/", mirrorEntityBody)
+	requestBody := `{
+	 	"roleIds": [],
+		"key" : null
+	}`
+
+	// when
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(requestBody))
+	req.Header.Set(ContentType, ContentTypeApplicationJson)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	// then
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var actual any
+	json.Unmarshal(rec.Body.Bytes(), &actual)
+	expected := map[string]any{
+		"roleIds": []any{},
+		"key":     nil,
 	}
 	assert.Equal(t, expected, actual)
 

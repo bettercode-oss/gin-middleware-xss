@@ -59,14 +59,14 @@ func sanitizeField(fieldValue any, p *bluemonday.Policy) any {
 	values := reflect.ValueOf(fieldValue)
 	switch values.Kind() {
 	case reflect.Slice:
+		arr := make([]any, values.Len())
 		if values.Len() > 0 {
-			arr := make([]any, values.Len())
 			for i := 0; i < values.Len(); i++ {
 				chgField := sanitizeField(values.Index(i).Interface(), p)
 				arr[i] = chgField
 			}
-			return arr
 		}
+		return arr
 	case reflect.Map:
 		obj := make(map[string]any)
 		for _, key := range values.MapKeys() {
@@ -76,14 +76,9 @@ func sanitizeField(fieldValue any, p *bluemonday.Policy) any {
 		return obj
 	case reflect.String:
 		return strings.TrimSpace(p.Sanitize(fmt.Sprintf("%v", fieldValue)))
-	case reflect.Bool:
-		return fieldValue
-	case reflect.Float64:
-		return fieldValue
 	default:
-		return strings.TrimSpace(p.Sanitize(fmt.Sprintf("%v", fieldValue)))
+		return fieldValue
 	}
-	return nil
 }
 
 func Sanitizer(cfg Config) gin.HandlerFunc {
